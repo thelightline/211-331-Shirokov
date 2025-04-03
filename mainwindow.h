@@ -24,7 +24,7 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
-    QByteArray encryptData(const QByteArray &data, const QByteArray &key); // <-- исправленное объявление
+    QByteArray encryptData(const QByteArray &data, const QByteArray &key);
 
 private:
     QStackedWidget *stackedWidget;

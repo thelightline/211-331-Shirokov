@@ -22,7 +22,6 @@
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     qDebug() << "Current working directory:" << QDir::currentPath();
-
     stackedWidget = new QStackedWidget(this);
     setCentralWidget(stackedWidget);
 
@@ -39,7 +38,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
 }
 
 MainWindow::~MainWindow() {
-    // Очищаем чувствительные данные
+    // Очищаем чувствительные данные (Деструктор)
     for (auto& cred : memoryStorage) {
         cred.encryptedLogin.fill('*');
         cred.encryptedPassword.fill('*');
@@ -231,7 +230,7 @@ void MainWindow::checkPassword() {
         pin.toUtf8(),
         QCryptographicHash::Sha3_256
         );
-    qDebug() << "Generated key:" << key.toHex();
+    //qDebug() << "Generated key:" << key.toHex();
 
     QFile file("credentialsAES.json");
     if (!file.exists()) {
@@ -265,7 +264,7 @@ void MainWindow::createEncryptedFile(const QByteArray &key) {
     QByteArray jsonData = jsonFile.readAll();
     jsonFile.close();
 
-    // Шифруем в hex виде
+    // Шифруем файл в hex виде
     QByteArray encryptedData;
     if (!do_crypt(jsonData, encryptedData, key, true)) {
         qDebug() << "Encryption failed!";
@@ -300,7 +299,7 @@ bool MainWindow::decryptFile(const QByteArray &key) {
     file.close();
 
     QByteArray encryptedData = QByteArray::fromHex(hexEncryptedData);
-
+    // Дешифровка файла
     QByteArray decryptedData;
     if (!do_crypt(encryptedData, decryptedData, key, false)) {
         qDebug() << "Decryption failed!";
@@ -371,7 +370,7 @@ bool MainWindow::do_crypt(const QByteArray &in, QByteArray &out, const QByteArra
         return false;
     }
 
-    // Обработка IV
+    // Обработка IV (Initialization Vector)
     unsigned char iv[EVP_MAX_IV_LENGTH];
     if (encrypt) {
         if (RAND_bytes(iv, EVP_MAX_IV_LENGTH) != 1) {
@@ -466,12 +465,21 @@ void MainWindow::loadDataToTable() {
 }
 
 QString MainWindow::requestSecondPin() {
-    bool ok;
-    QString pin = QInputDialog::getText(this, "Enter PIN", "Please enter your PIN to copy credentials:", QLineEdit::Password, "", &ok);
-    if (ok && !pin.isEmpty()) {
-        return pin;
-    }
-    return QString();
+    QInputDialog dialog(this);
+    dialog.setWindowTitle("Enter PIN");
+    dialog.setLabelText("Please enter your PIN to copy credentials:");
+    dialog.setTextEchoMode(QLineEdit::Password);
+
+    // Установка минимального/максимального размера
+    dialog.setMinimumSize(300, 120);
+    dialog.setMaximumSize(300, 120);
+
+    // Центрирование диалога
+    dialog.move(
+        this->geometry().center() - dialog.rect().center()
+        );
+
+    return (dialog.exec() == QDialog::Accepted) ? dialog.textValue() : QString();
 }
 
 void MainWindow::handleCellDoubleClick(int row, int column) {
@@ -514,7 +522,7 @@ void MainWindow::handleCellDoubleClick(int row, int column) {
     // Очищаем второй ключ
     secureClear(secondKey);
 }
-
+    // Очищаем память
 void MainWindow::returnToLogin() {
     memoryStorage.clear();
     dataTable->setRowCount(0);
