@@ -11,8 +11,7 @@ void get_elem(char* buffer, int len, int index) {
     if (index >= db_size || index < 0) {
         memcpy(buffer, error, strlen(error));
     }
-    else
-    {
+    else {
         memcpy(buffer, db_arr[index], strlen(db_arr[index]));
     }
 
