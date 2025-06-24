@@ -1,0 +1,2 @@
+D:\Prog\!SecDev\LR2_PassThrough\x64\Debug\passThrough.sys
+C:\Users\waveform\Desktop\proga\LR2_Shirokov\LR2_PassThrough\x64\Debug\passThrough.sys

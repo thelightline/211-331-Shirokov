@@ -1,0 +1,8 @@
+﻿  Building 'passThrough' with toolset 'WindowsKernelModeDriver10.0' and the 'Universal' target platform.
+  Stamping x64\Release\passThrough.inf
+  Stamping [Version] section with DriverVer=05/18/2025,15.24.6.12
+  passThrough.c
+D:\Prog\!SecDev\LR2_PassThrough\passThrough.c(797,35): error C2220: следующее предупреждение рассматривается как ошибка
+D:\Prog\!SecDev\LR2_PassThrough\passThrough.c(797,35): warning C4100: Flags: неиспользованный формальный параметр
+D:\Prog\!SecDev\LR2_PassThrough\passThrough.c(796,20): warning C4100: CompletionContext: неиспользованный формальный параметр
+D:\Prog\!SecDev\LR2_PassThrough\passThrough.c(795,32): warning C4100: FltObjects: неиспользованный формальный параметр

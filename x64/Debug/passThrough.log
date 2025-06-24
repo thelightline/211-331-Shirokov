@@ -1,0 +1,44 @@
+﻿  Building 'passThrough' with toolset 'WindowsKernelModeDriver10.0' and the 'Universal' target platform.
+  Stamping x64\Debug\passThrough.inf
+  Stamping [Version] section with DriverVer=06/23/2025,21.49.38.550
+  passThrough.c
+C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.43.34808\include\vcruntime.h(61,26): warning C4083: требуется ")"; обнаружен идентификатор "_VCRUNTIME_DISABLED_WARNINGS"
+  (компиляция исходного файла "passThrough.c")
+  
+C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.43.34808\include\vcruntime.h(111,9): warning C4005: _CRT_STRINGIZE: изменение макроопределения
+  (компиляция исходного файла "passThrough.c")
+      C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\km\crt\crtdefs.h(85,9):
+      см. предыдущее определение "_CRT_STRINGIZE"
+  
+C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.43.34808\include\vcruntime.h(114,9): warning C4005: _CRT_WIDE: изменение макроопределения
+  (компиляция исходного файла "passThrough.c")
+      C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\km\crt\crtdefs.h(88,9):
+      см. предыдущее определение "_CRT_WIDE"
+  
+C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.43.34808\include\vcruntime.h(155,9): warning C4005: __CRTDECL: изменение макроопределения
+  (компиляция исходного файла "passThrough.c")
+      C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\km\crt\crtdefs.h(640,9):
+      см. предыдущее определение "__CRTDECL"
+  
+C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.43.34808\include\stdint.h(16,26): warning C4083: требуется ")"; обнаружен идентификатор "_VCRUNTIME_DISABLED_WARNINGS"
+  (компиляция исходного файла "passThrough.c")
+  
+  passThrough.vcxproj -> C:\Users\waveform\Desktop\proga\LR2_Shirokov\LR2_PassThrough\x64\Debug\passThrough.sys
+  Done Adding Additional Store
+  Successfully signed: C:\Users\waveform\Desktop\proga\LR2_Shirokov\LR2_PassThrough\x64\Debug\passThrough.sys
+  
+  Driver is 'Universal'.
+  .........................
+  Signability test complete.
+  
+  Errors:
+  None
+  
+  Warnings:
+  None
+  
+  Catalog generation complete.
+  C:\Users\waveform\Desktop\proga\LR2_Shirokov\LR2_PassThrough\x64\Debug\passThrough\passthrough.cat
+  Done Adding Additional Store
+  Successfully signed: x64\Debug\passThrough\passthrough.cat
+  
