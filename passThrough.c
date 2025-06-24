@@ -1,3 +1,23 @@
+/*++
+
+Copyright (c) 1999 - 2002  Microsoft Corporation
+
+Module Name:
+
+    passThrough.c
+
+Abstract:
+
+    This is the main module of the passThrough miniFilter driver.
+    This filter hooks all IO operations for both pre and post operation
+    callbacks.  The filter passes through the operations.
+
+Environment:
+
+    Kernel mode
+
+--*/
+
 #include <fltKernel.h>
 #include <dontuse.h>
 #include <suppress.h>
@@ -14,17 +34,12 @@
 #define MY_BUFFER_TAG  'fuBM'          // Буфер для модифицированной записи
 #define MY_READ_TEMP_BUFFER_TAG 'buRT' // Временный буфер для чтения
 
-// Статический ключ AES-256 (32 байта)
-// В производственной системе ключ должен быть защищен и управляться отдельно
-
 const uint8_t aes_key[32] = {
     0x22, 0x4e, 0x11, 0x28, 0x32, 0xb5, 0xca, 0xc1,
     0x90, 0x70, 0xb1, 0xff, 0x59, 0xcd, 0x84, 0xdc,
     0x3b, 0x39, 0x0a, 0x36, 0x39, 0x3a, 0x90, 0xc4,
     0xcc, 0xfe, 0x15, 0x08, 0x82, 0x93, 0x12, 0xec
 };
-
-// Вектор инициализации для AES-CBC (16 байт)
 
 const uint8_t aes_iv[16] = {
     0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,
@@ -52,100 +67,93 @@ ULONG gTraceFlags = 0;
 
 // Структура контекста для передачи данных между pre-op и post-op WRITE
 typedef struct _MY_WRITE_CONTEXT {
-    PVOID NewBuffer;       // Указатель на выделенный нами буфер
-    PMDL  NewMdl;          // Указатель на созданный нами MDL (если MdlAddress использовался)
-    PMDL  OriginalMdl;     // Исходный MDL (для восстановления указателя в Data, если потребуется)
-    // Хотя обычно Filter Manager сам корректно обрабатывает замену MDL
+    PVOID NewBuffer;       // Указатель на выделенный буфер
+    PMDL  NewMdl;          // Указатель на созданный MDL (если MdlAddress использовался)
+    PMDL  OriginalMdl;     // Исходный MDL (для восстановления указателя в Data, если потребуется) (обычно Filter Manager сам корректно обрабатывает замену MDL)
     PVOID OriginalWriteBuffer; // Исходный WriteBuffer (если он использовался)
     ULONG OriginalLength;    // Исходная длина данных
     ULONG NewLength;         // Новая длина данных после шифрования
     BOOLEAN MdlChanged;      // Флаг, указывающий, был ли заменен MDL
 } MY_WRITE_CONTEXT, * PMY_WRITE_CONTEXT;
 
-/*************************************************************************
-    Prototypes
-*************************************************************************/
+// Prototypes
 
 DRIVER_INITIALIZE DriverEntry;
 NTSTATUS
-DriverEntry (
+DriverEntry(
     _In_ PDRIVER_OBJECT DriverObject,
     _In_ PUNICODE_STRING RegistryPath
-    );
+);
 
 NTSTATUS
-PtInstanceSetup (
+PtInstanceSetup(
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_ FLT_INSTANCE_SETUP_FLAGS Flags,
     _In_ DEVICE_TYPE VolumeDeviceType,
     _In_ FLT_FILESYSTEM_TYPE VolumeFilesystemType
-    );
+);
 
 VOID
-PtInstanceTeardownStart (
+PtInstanceTeardownStart(
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_ FLT_INSTANCE_TEARDOWN_FLAGS Flags
-    );
+);
 
 VOID
-PtInstanceTeardownComplete (
+PtInstanceTeardownComplete(
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_ FLT_INSTANCE_TEARDOWN_FLAGS Flags
-    );
+);
 
 NTSTATUS
-PtUnload (
+PtUnload(
     _In_ FLT_FILTER_UNLOAD_FLAGS Flags
-    );
+);
 
 NTSTATUS
-PtInstanceQueryTeardown (
+PtInstanceQueryTeardown(
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_ FLT_INSTANCE_QUERY_TEARDOWN_FLAGS Flags
-    );
+);
 
 FLT_PREOP_CALLBACK_STATUS
-PtPreOperationPassThrough (
+PtPreOperationPassThrough(
     _Inout_ PFLT_CALLBACK_DATA Data,
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _Flt_CompletionContext_Outptr_ PVOID *CompletionContext
-    );
+    _Flt_CompletionContext_Outptr_ PVOID* CompletionContext
+);
 
 VOID
-PtOperationStatusCallback (
+PtOperationStatusCallback(
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_ PFLT_IO_PARAMETER_BLOCK ParameterSnapshot,
     _In_ NTSTATUS OperationStatus,
     _In_ PVOID RequesterContext
-    );
+);
 
 FLT_POSTOP_CALLBACK_STATUS
-PtPostOperationPassThrough (
+PtPostOperationPassThrough(
     _Inout_ PFLT_CALLBACK_DATA Data,
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_opt_ PVOID CompletionContext,
     _In_ FLT_POST_OPERATION_FLAGS Flags
-    );
+);
 
 FLT_PREOP_CALLBACK_STATUS
-PtPreOperationNoPostOperationPassThrough (
+PtPreOperationNoPostOperationPassThrough(
     _Inout_ PFLT_CALLBACK_DATA Data,
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _Flt_CompletionContext_Outptr_ PVOID *CompletionContext
-    );
+    _Flt_CompletionContext_Outptr_ PVOID* CompletionContext
+);
 
 BOOLEAN
 PtDoRequestOperationStatus(
     _In_ PFLT_CALLBACK_DATA Data
-    );
+);
 
 // Функции для шифрования и дешифрования буфера 
 VOID EncryptBuffer(uint8_t* buffer, SIZE_T* length);
 VOID DecryptBuffer(uint8_t* buffer, SIZE_T* length);
-
-//
-//  Assign text sections for each routine.
-//
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(INIT, DriverEntry)
@@ -156,10 +164,8 @@ VOID DecryptBuffer(uint8_t* buffer, SIZE_T* length);
 #pragma alloc_text(PAGE, PtInstanceTeardownComplete)
 #endif
 
-//
-//  operation registration
-//
 
+//  operation registration
 CONST FLT_OPERATION_REGISTRATION Callbacks[] = {
     { IRP_MJ_CREATE,
       0,
@@ -358,105 +364,92 @@ CONST FLT_OPERATION_REGISTRATION Callbacks[] = {
 
     { IRP_MJ_OPERATION_END }
 };
-
-//
 //  This defines what we want to filter with FltMgr
-//
-
 CONST FLT_REGISTRATION FilterRegistration = {
-
-    sizeof( FLT_REGISTRATION ),         //  Size
+    sizeof(FLT_REGISTRATION),         //  Size
     FLT_REGISTRATION_VERSION,           //  Version
     0,                                  //  Flags
-
     NULL,                               //  Context
     Callbacks,                          //  Operation callbacks
-
     PtUnload,                           //  MiniFilterUnload
-
     PtInstanceSetup,                    //  InstanceSetup
     PtInstanceQueryTeardown,            //  InstanceQueryTeardown
     PtInstanceTeardownStart,            //  InstanceTeardownStart
     PtInstanceTeardownComplete,         //  InstanceTeardownComplete
-
     NULL,                               //  GenerateFileName
     NULL,                               //  GenerateDestinationFileName
     NULL                                //  NormalizeNameComponent
 
 };
 
-
-
 NTSTATUS
-PtInstanceSetup (
+PtInstanceSetup(
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_ FLT_INSTANCE_SETUP_FLAGS Flags,
     _In_ DEVICE_TYPE VolumeDeviceType,
     _In_ FLT_FILESYSTEM_TYPE VolumeFilesystemType
-    )
-
+)
 {
-    UNREFERENCED_PARAMETER( FltObjects );
-    UNREFERENCED_PARAMETER( Flags );
-    UNREFERENCED_PARAMETER( VolumeDeviceType );
-    UNREFERENCED_PARAMETER( VolumeFilesystemType );
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(Flags);
+    UNREFERENCED_PARAMETER(VolumeDeviceType);
+    UNREFERENCED_PARAMETER(VolumeFilesystemType);
 
     PAGED_CODE();
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("PassThrough!PtInstanceSetup: Entered\n") );
+    PT_DBG_PRINT(PTDBG_TRACE_ROUTINES,
+        ("PassThrough!PtInstanceSetup: Entered\n"));
 
     return STATUS_SUCCESS;
 }
 
 
 NTSTATUS
-PtInstanceQueryTeardown (
+PtInstanceQueryTeardown(
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_ FLT_INSTANCE_QUERY_TEARDOWN_FLAGS Flags
-    )
+)
 {
-    UNREFERENCED_PARAMETER( FltObjects );
-    UNREFERENCED_PARAMETER( Flags );
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(Flags);
 
     PAGED_CODE();
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("PassThrough!PtInstanceQueryTeardown: Entered\n") );
+    PT_DBG_PRINT(PTDBG_TRACE_ROUTINES,
+        ("PassThrough!PtInstanceQueryTeardown: Entered\n"));
 
     return STATUS_SUCCESS;
 }
 
-
 VOID
-PtInstanceTeardownStart (
+PtInstanceTeardownStart(
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_ FLT_INSTANCE_TEARDOWN_FLAGS Flags
-    )
+)
 {
-    UNREFERENCED_PARAMETER( FltObjects );
-    UNREFERENCED_PARAMETER( Flags );
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(Flags);
 
     PAGED_CODE();
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("PassThrough!PtInstanceTeardownStart: Entered\n") );
+    PT_DBG_PRINT(PTDBG_TRACE_ROUTINES,
+        ("PassThrough!PtInstanceTeardownStart: Entered\n"));
 }
 
 
 VOID
-PtInstanceTeardownComplete (
+PtInstanceTeardownComplete(
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_ FLT_INSTANCE_TEARDOWN_FLAGS Flags
-    )
+)
 {
-    UNREFERENCED_PARAMETER( FltObjects );
-    UNREFERENCED_PARAMETER( Flags );
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(Flags);
 
     PAGED_CODE();
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("PassThrough!PtInstanceTeardownComplete: Entered\n") );
+    PT_DBG_PRINT(PTDBG_TRACE_ROUTINES,
+        ("PassThrough!PtInstanceTeardownComplete: Entered\n"));
 }
 
 
@@ -465,59 +458,49 @@ PtInstanceTeardownComplete (
 *************************************************************************/
 
 NTSTATUS
-DriverEntry (
+DriverEntry(
     _In_ PDRIVER_OBJECT DriverObject,
     _In_ PUNICODE_STRING RegistryPath
-    )
+)
 {
     NTSTATUS status;
 
-    UNREFERENCED_PARAMETER( RegistryPath );
+    UNREFERENCED_PARAMETER(RegistryPath);
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("PassThrough!DriverEntry: Entered\n") );
+    PT_DBG_PRINT(PTDBG_TRACE_ROUTINES,
+        ("PassThrough!DriverEntry: Entered\n"));
+    status = FltRegisterFilter(DriverObject,
+        &FilterRegistration,
+        &gFilterHandle);
+    FLT_ASSERT(NT_SUCCESS(status));
+    if (NT_SUCCESS(status)) {
+        //  Start filtering i/o
+        status = FltStartFiltering(gFilterHandle);
+        if (!NT_SUCCESS(status)) {
 
-    //
-    //  Register with FltMgr to tell it our callback routines
-    //
-
-    status = FltRegisterFilter( DriverObject,
-                                &FilterRegistration,
-                                &gFilterHandle );
-
-    FLT_ASSERT( NT_SUCCESS( status ) );
-
-    if (NT_SUCCESS( status )) {
-
-
-        status = FltStartFiltering( gFilterHandle );
-
-        if (!NT_SUCCESS( status )) {
-
-            FltUnregisterFilter( gFilterHandle );
+            FltUnregisterFilter(gFilterHandle);
         }
     }
-
     return status;
 }
 
 NTSTATUS
-PtUnload (
+PtUnload(
     _In_ FLT_FILTER_UNLOAD_FLAGS Flags
-    )
+)
 {
-    UNREFERENCED_PARAMETER( Flags );
-
+    UNREFERENCED_PARAMETER(Flags);
     PAGED_CODE();
-
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("PassThrough!PtUnload: Entered\n") );
-
-    FltUnregisterFilter( gFilterHandle );
-
+    PT_DBG_PRINT(PTDBG_TRACE_ROUTINES,
+        ("PassThrough!PtUnload: Entered\n"));
+    FltUnregisterFilter(gFilterHandle);
     return STATUS_SUCCESS;
 }
 
+
+/*************************************************************************
+    MiniFilter callback routines.
+*************************************************************************/
 VOID EncryptBuffer(uint8_t* buffer, SIZE_T* length) {
     SIZE_T originalLen = *length;
     SIZE_T padLen = AES_BLOCK_SIZE - (originalLen % AES_BLOCK_SIZE);
@@ -531,19 +514,16 @@ VOID EncryptBuffer(uint8_t* buffer, SIZE_T* length) {
         padLen = AES_BLOCK_SIZE;
     }
 
-
     SIZE_T totalLen = originalLen + padLen;
-
+    
     // Добавляем паддинг PKCS#7
     for (SIZE_T i = 0; i < padLen; ++i) {
         buffer[originalLen + i] = (uint8_t)padLen;
     }
-
     struct AES_ctx ctx;
     AES_init_ctx_iv(&ctx, aes_key, aes_iv); // Инициализируем контекст AES с ключом и вектором инициализации
-    AES_CBC_encrypt_buffer(&ctx, buffer, (uint32_t)totalLen);    
+    AES_CBC_encrypt_buffer(&ctx, buffer, (uint32_t)totalLen);
     *length = totalLen;
-
     DbgPrint("EncryptBuffer: Original len: %lu, Padded len: %lu, Total encrypted len: %lu, Pad byte: 0x%x\n",
         (ULONG)originalLen, (ULONG)padLen, (ULONG)totalLen, (uint8_t)padLen);
 }
@@ -558,26 +538,20 @@ PtPreOperationPassThrough(
     NTSTATUS status;
     PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
     FLT_PREOP_CALLBACK_STATUS returnStatus = FLT_PREOP_SUCCESS_WITH_CALLBACK;
-
     UNREFERENCED_PARAMETER(FltObjects);
     *CompletionContext = NULL;
-
     if (Data->Iopb->MajorFunction == IRP_MJ_WRITE) {
         status = FltGetFileNameInformation(
             Data,
             FLT_FILE_NAME_NORMALIZED | FLT_FILE_NAME_QUERY_DEFAULT,
             &nameInfo);
-
         if (NT_SUCCESS(status)) {
-            
             status = FltParseFileNameInformation(nameInfo);
             if (NT_SUCCESS(status)) {
-
                 // Проверяем, соответствует ли расширение файла требуемому
                 const UNICODE_STRING required_extension = RTL_CONSTANT_STRING(L"testlabext");
                 if (RtlEqualUnicodeString(&required_extension, &(nameInfo->Extension), FALSE)) {
                     DbgPrint("Lab2: PRE-WRITE - Extension '.testlabext' matched!\n");
-
                     PMY_WRITE_CONTEXT context = NULL;
                     PVOID originalDataBuffer = NULL;
                     ULONG originalLength = Data->Iopb->Parameters.Write.Length;
@@ -585,14 +559,10 @@ PtPreOperationPassThrough(
                     PVOID newAllocatedBuffer = NULL;
                     PMDL newMdl = NULL;
                     LARGE_INTEGER originalOffset = Data->Iopb->Parameters.Write.ByteOffset;
-
                     // Если длина записи равна 0, проверяем флаги IRP для предупреждения
                     if (originalLength == 0 && !(Data->Iopb->IrpFlags & IRP_PAGING_IO) && !(Data->Iopb->IrpFlags & IRP_SYNCHRONOUS_PAGING_IO)) {
                         DbgPrint("Lab2: PRE-WRITE - Matched file with 0 length write at offset %I64d. Current Flags: 0x%x. Consider if modification is intended.\n", originalOffset.QuadPart, Data->Iopb->IrpFlags);
-
                     }
-
-
                     if (originalMdl) {
                         originalDataBuffer = MmGetSystemAddressForMdlSafe(originalMdl, NormalPagePriority);
                         DbgPrint("Lab2: PRE-WRITE - MDL path. originalDataBuffer: 0x%p\n", originalDataBuffer);
@@ -617,7 +587,6 @@ PtPreOperationPassThrough(
                             padLen = AES_BLOCK_SIZE;
                         }
                         ULONG newLength = originalLength + (ULONG)padLen;
-
                         context = ExAllocatePoolZero(NonPagedPool, sizeof(MY_WRITE_CONTEXT), MY_CONTEXT_TAG);
                         if (!context) {
                             DbgPrint("Lab2: PRE-WRITE - ERROR: Failed to allocate MY_WRITE_CONTEXT.\n");
@@ -636,13 +605,11 @@ PtPreOperationPassThrough(
                                     if (originalLength > 0 && originalDataBuffer) {
                                         RtlCopyMemory(newAllocatedBuffer, originalDataBuffer, originalLength);
                                     }
-                                      // Шифруем новый буфер с добавлением паддинга
+                                    // Шифруем новый буфер с добавлением паддинга
                                     SIZE_T encryptedLength = originalLength;
                                     EncryptBuffer((uint8_t*)newAllocatedBuffer, &encryptedLength);
-                                    
                                     DbgPrint("Lab2: PRE-WRITE - Data encrypted. OrigLen: %lu -> EncryptedLen: %lu at 0x%p\n",
                                         originalLength, (ULONG)encryptedLength, newAllocatedBuffer);
-
                                 } except(EXCEPTION_EXECUTE_HANDLER) {
                                     copyStatus = GetExceptionCode();
                                     DbgPrint("Lab2: PRE-WRITE - ERROR: Exception 0x%x during encryption.\n", copyStatus);
@@ -652,7 +619,6 @@ PtPreOperationPassThrough(
                                     context->OriginalLength = originalLength;
                                     context->NewBuffer = newAllocatedBuffer;
                                     context->NewLength = newLength;
-
                                     if (originalMdl) {
                                         newMdl = IoAllocateMdl(newAllocatedBuffer, newLength, FALSE, FALSE, NULL);
                                         if (!newMdl) {
@@ -679,19 +645,17 @@ PtPreOperationPassThrough(
                                             }
                                         }
                                     }
+
                                     else { // Если MDL не использовался, просто обновляем WriteBuffer
                                         Data->Iopb->Parameters.Write.WriteBuffer = newAllocatedBuffer;
                                         context->MdlChanged = FALSE;
                                         context->OriginalWriteBuffer = originalDataBuffer;
                                         context->NewMdl = NULL;
                                     }
-
-                                    if (context) { 
+                                    if (context) {
                                         Data->Iopb->Parameters.Write.Length = newLength;
                                         *CompletionContext = context;
-                                         
-                                        // Указываем, что данные в Data изменены
-                                        FltSetCallbackDataDirty(Data);
+                                        FltSetCallbackDataDirty(Data); // Указываем, что данные в Data изменены
                                         DbgPrint("Lab2: PRE-WRITE - Encryption successful for write at Offset: %I64d. OrigLen: %lu -> EncryptedLen: %lu. CompletionContext SET.\n",
                                             originalOffset.QuadPart, originalLength, newLength);
                                     }
@@ -700,13 +664,12 @@ PtPreOperationPassThrough(
                         }
                     }
                 }
-            } // FltParseFileNameInformation OK
-
+            } 
             if (nameInfo) {
                 FltReleaseFileNameInformation(nameInfo); // Очищаем имя файла
             }
-        } // FltGetFileNameInformation OK
-    } // IRP_MJ_WRITE
+        } 
+    } 
 
     if (PtDoRequestOperationStatus(Data)) {
         status = FltRequestOperationStatusCallback(Data,
@@ -723,31 +686,30 @@ PtPreOperationPassThrough(
 
 
 VOID
-PtOperationStatusCallback (
+PtOperationStatusCallback(
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
     _In_ PFLT_IO_PARAMETER_BLOCK ParameterSnapshot,
     _In_ NTSTATUS OperationStatus,
     _In_ PVOID RequesterContext
-    )
+)
 {
-    UNREFERENCED_PARAMETER( FltObjects );
+    UNREFERENCED_PARAMETER(FltObjects);
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("PassThrough!PtOperationStatusCallback: Entered\n") );
+    PT_DBG_PRINT(PTDBG_TRACE_ROUTINES,
+        ("PassThrough!PtOperationStatusCallback: Entered\n"));
 
-    PT_DBG_PRINT( PTDBG_TRACE_OPERATION_STATUS,
-                  ("PassThrough!PtOperationStatusCallback: Status=%08x ctx=%p IrpMj=%02x.%02x \"%s\"\n",
-                   OperationStatus,
-                   RequesterContext,
-                   ParameterSnapshot->MajorFunction,
-                   ParameterSnapshot->MinorFunction,
-                   FltGetIrpName(ParameterSnapshot->MajorFunction)) );
+    PT_DBG_PRINT(PTDBG_TRACE_OPERATION_STATUS,
+        ("PassThrough!PtOperationStatusCallback: Status=%08x ctx=%p IrpMj=%02x.%02x \"%s\"\n",
+            OperationStatus,
+            RequesterContext,
+            ParameterSnapshot->MajorFunction,
+            ParameterSnapshot->MinorFunction,
+            FltGetIrpName(ParameterSnapshot->MajorFunction)));
 }
 
 VOID DecryptBuffer(uint8_t* buffer, SIZE_T* length) {
     if (*length == 0 || (*length % AES_BLOCK_SIZE != 0)) {
         DbgPrint("DecryptBuffer: Invalid length for decryption: %lu\n", (ULONG)*length);
-        // Возможно, стоит вернуть ошибку или не изменять длину
         return;
     }
 
@@ -795,9 +757,10 @@ PtPostOperationPassThrough(
     _In_opt_ PVOID CompletionContext,
     _In_ FLT_POST_OPERATION_FLAGS Flags
 )
-{   UNREFERENCED_PARAMETER(FltObjects); 
-    UNREFERENCED_PARAMETER(Flags);    
-    
+{
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(Flags);
+
     PT_DBG_PRINT(PTDBG_TRACE_ROUTINES,
         ("PassThrough!PtPostOperationPassThrough: Entered. IRP_MJ_FUNCTION: 0x%x\n", Data->Iopb->MajorFunction));
 
@@ -900,32 +863,32 @@ PtPostOperationPassThrough(
                                     // Копируем данные из целевого буфера во временный буфер
                                     // Это нужно, чтобы не изменять оригинальный буфер до успешной расшифровки
                                     RtlCopyMemory(tempDecryptBuffer, targetBuffer, bytesActuallyRead);
-                                    
+
                                     // Расшифровываем данные 
                                     SIZE_T decryptedLength = bytesActuallyRead;
                                     DecryptBuffer((uint8_t*)tempDecryptBuffer, &decryptedLength);
-                                      // Проверяем, что расшифрованная длина не превышает исходно запрошенную
+                                    // Проверяем, что расшифрованная длина не превышает исходно запрошенную
                                     if (decryptedLength <= originalRequestedLength) {
                                         // Копируем расшифрованные данные обратно в целевой буфер
                                         RtlCopyMemory(targetBuffer, tempDecryptBuffer, decryptedLength);
-                                        
+
                                         // Если расшифрованная длина меньше, чем фактически прочитано, очищаем оставшуюся часть буфера
                                         if (decryptedLength < bytesActuallyRead) {
                                             RtlZeroMemory((PUCHAR)targetBuffer + decryptedLength, bytesActuallyRead - decryptedLength);
                                         }
-                                        
+
                                         Data->IoStatus.Information = decryptedLength; // Обновляем информацию о количестве прочитанных байт
                                         // Отмечаем, что данные в Data изменены
                                         FltSetCallbackDataDirty(Data);
-                                        
-                                        DbgPrint("Lab2: POST-READ - Data decrypted. EncryptedLen: %lu -> DecryptedLen: %lu, cleared %lu bytes\n", 
+
+                                        DbgPrint("Lab2: POST-READ - Data decrypted. EncryptedLen: %lu -> DecryptedLen: %lu, cleared %lu bytes\n",
                                             bytesActuallyRead, (ULONG)decryptedLength, bytesActuallyRead - (ULONG)decryptedLength);
                                     }
                                     else {
                                         DbgPrint("Lab2: POST-READ - Decrypted data too large for buffer (decrypted %lu > available %lu)\n",
                                             (ULONG)decryptedLength, originalRequestedLength);
                                     }
-                                    
+
                                 } except(EXCEPTION_EXECUTE_HANDLER) {
                                     decryptStatus = GetExceptionCode();
                                     DbgPrint("Lab2: POST-READ - Exception 0x%x during decryption.\n", decryptStatus);
@@ -959,41 +922,36 @@ PtPostOperationPassThrough(
 
 
 FLT_PREOP_CALLBACK_STATUS
-PtPreOperationNoPostOperationPassThrough (
+PtPreOperationNoPostOperationPassThrough(
     _Inout_ PFLT_CALLBACK_DATA Data,
     _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _Flt_CompletionContext_Outptr_ PVOID *CompletionContext
-    )
+    _Flt_CompletionContext_Outptr_ PVOID* CompletionContext
+)
 {
-    UNREFERENCED_PARAMETER( Data );
-    UNREFERENCED_PARAMETER( FltObjects );
-    UNREFERENCED_PARAMETER( CompletionContext );
+    UNREFERENCED_PARAMETER(Data);
+    UNREFERENCED_PARAMETER(FltObjects);
+    UNREFERENCED_PARAMETER(CompletionContext);
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("PassThrough!PtPreOperationNoPostOperationPassThrough: Entered\n") );
+    PT_DBG_PRINT(PTDBG_TRACE_ROUTINES,
+        ("PassThrough!PtPreOperationNoPostOperationPassThrough: Entered\n"));
 
     return FLT_PREOP_SUCCESS_NO_CALLBACK;
 }
 
-
 BOOLEAN
 PtDoRequestOperationStatus(
     _In_ PFLT_CALLBACK_DATA Data
-    )
+)
 {
     PFLT_IO_PARAMETER_BLOCK iopb = Data->Iopb;
-
     return (BOOLEAN)
-             (((iopb->MajorFunction == IRP_MJ_FILE_SYSTEM_CONTROL) &&
-               ((iopb->Parameters.FileSystemControl.Common.FsControlCode == FSCTL_REQUEST_FILTER_OPLOCK)  ||
-                (iopb->Parameters.FileSystemControl.Common.FsControlCode == FSCTL_REQUEST_BATCH_OPLOCK)   ||
+        (((iopb->MajorFunction == IRP_MJ_FILE_SYSTEM_CONTROL) &&
+            ((iopb->Parameters.FileSystemControl.Common.FsControlCode == FSCTL_REQUEST_FILTER_OPLOCK) ||
+                (iopb->Parameters.FileSystemControl.Common.FsControlCode == FSCTL_REQUEST_BATCH_OPLOCK) ||
                 (iopb->Parameters.FileSystemControl.Common.FsControlCode == FSCTL_REQUEST_OPLOCK_LEVEL_1) ||
                 (iopb->Parameters.FileSystemControl.Common.FsControlCode == FSCTL_REQUEST_OPLOCK_LEVEL_2)))
-
-              ||
-
-              ((iopb->MajorFunction == IRP_MJ_DIRECTORY_CONTROL) &&
-               (iopb->MinorFunction == IRP_MN_NOTIFY_CHANGE_DIRECTORY))
-             );
+            ||
+            ((iopb->MajorFunction == IRP_MJ_DIRECTORY_CONTROL) &&
+                (iopb->MinorFunction == IRP_MN_NOTIFY_CHANGE_DIRECTORY))
+            );
 }
-
